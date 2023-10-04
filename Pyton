@@ -1,0 +1,102 @@
+.
+---
+- name: Check OS version and set Python version variable
+  hosts: your_host_group
+  vars:
+    allowed_python_versions:
+      rhel7:
+        - "2.7"
+        - "3.6"
+      rhel8:
+        - "3.6"
+        - "3.8"
+        - "3.9"
+
+  tasks:
+    - name: Gather facts
+      setup:
+
+    - name: Check OS version
+      set_fact:
+        os_version: "{{ ansible_facts['ansible_distribution_major_version'] }}"
+      when: "ansible_facts['ansible_distribution'] == 'RedHat' and (ansible_facts['ansible_distribution_major_version'] == '7' or ansible_facts['ansible_distribution_major_version'] == '8')"
+
+    - fail:
+        msg: "Unsupported OS version: {{ ansible_facts['ansible_distribution_major_version'] }}"
+      when: os_version is not defined
+
+    - set_fact:
+        python_version: "{{ allowed_python_versions[os_version] | first }}"
+      when: os_version is defined
+
+    - name: Copy python.repo.j2 file with adjusted base_url
+      template:
+        src: python.repo.j2
+        dest: "/etc/yum.repos.d/python.repo"
+      when: os_version is defined
+
+    - name: Check free disk space in /opt/
+      stat:
+        path: /opt/
+      register: disk_space_result
+
+    - fail:
+        msg: "Insufficient disk space in /opt/. Required: 200MB, Available: {{ (disk_space_result.stat.size_available / 1024 / 1024) | round(2) }}MB"
+      when: (disk_space_result.stat.size_available / 1024 / 1024) < 200
+
+    - name: Install Python
+      yum:
+        name: "python{{ python_version }}"
+        state: present
+      when: os_version is defined
+
+    - name: Print installed Python version
+      command: "python{{ python_version }} --version"
+      when: os_version is defined
+      register: python_version_output
+
+    - name: Print Python installation path
+      command: "which python{{ python_version }}"
+      when: os_version is defined
+      register: python_installation_path
+
+    - name: Install Python
+      yum:
+        name: python{{ python_version }}
+        state: present
+      when: os_version is defined
+
+    - name: Install Python
+      yum:
+        name: python{{ python_version }}
+        state: present
+      when: os_version is defined
+
+    - name: Print installed Python version
+      command: python{{ python_version }} --version
+      when: os_version is defined
+      register: python_version_output
+
+    - name: Print Python installation path
+      command: which python{{ python_version }}
+      when: os_version is defined
+      register: python_installation_path
+
+    - name: Query installed Python RPM package name
+      command: rpm -qa | grep python{{ python_version }}
+      register: python_rpm_name
+      changed_when: False  # This task won't be considered changed if no new RPMs are installed
+
+    - debug:
+        msg: "Installed Python Version: {{ python_version_output.stdout }} | Installation Path: {{ python_installation_path.stdout }} | RPM Name: {{ python_rpm_name.stdout }}"
+
+    - name: Log installation summary
+      lineinfile:
+        path: "{{ log_file }}"
+        line: |
+          Installation Summary:
+          - Installed Python Version: {{ python_version_output.stdout }}
+          - Installation Path: {{ python_installation_path.stdout }}
+          - RPM Name: {{ python_rpm_name.stdout }}
+          - Time of Installation: {{ ansible_date_time.date }} {{ ansible_date_time.time }}
+      when: os_version is defined
